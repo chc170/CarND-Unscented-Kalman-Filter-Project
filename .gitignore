@@ -1,5 +1,7 @@
 # silly macOS
 .DS_Store
+*.swp
+*.swo
 
 # build files
 build/
