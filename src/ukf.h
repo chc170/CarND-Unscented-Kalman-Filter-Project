@@ -85,6 +85,12 @@ public:
   virtual ~UKF();
 
   /**
+   * Initialize
+   * @param meas_package
+   */
+  void Initialize(MeasurementPackage meas_package);
+
+  /**
    * ProcessMeasurement
    * @param meas_package The latest measurement data of either radar or laser
    */
@@ -96,6 +102,9 @@ public:
    * @param delta_t Time between k and k+1 in s
    */
   void Prediction(double delta_t);
+  MatrixXd GenerateSigmaPoints();
+  void PredictSigmaPoints(MatrixXd Xsig, double dt);
+  void PredictMeanAndCovariance();
 
   /**
    * Updates the state and the state covariance matrix using a laser measurement
