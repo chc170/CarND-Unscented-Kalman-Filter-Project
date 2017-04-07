@@ -34,7 +34,7 @@ VectorXd Tools::CalculateRMSE(const vector<VectorXd> &estimations,
     return rmse;
 }
 
-MatrixXd Tools::PolarToCartesian(const VectorXd& x) {
+VectorXd Tools::PolarToCartesian(const VectorXd& x) {
 
     // recover state parameters
     float rho = x[0];
