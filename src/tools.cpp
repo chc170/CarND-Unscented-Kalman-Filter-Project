@@ -5,6 +5,8 @@ using Eigen::VectorXd;
 using Eigen::MatrixXd;
 using std::vector;
 
+static const double twoPI = 2 * M_PI;
+
 Tools::Tools() {}
 
 Tools::~Tools() {}
@@ -52,4 +54,12 @@ VectorXd Tools::PolarToCartesian(const VectorXd& x) {
     x_c << px, py, vx, vy;
 
     return x_c;
+}
+
+double Tools::NormalizeAngle(double rad) {
+
+    rad += M_PI;
+    rad = rad - twoPI * floor(rad/twoPI) - M_PI;
+
+    return rad;
 }

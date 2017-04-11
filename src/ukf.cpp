@@ -25,8 +25,12 @@ UKF::UKF() {
     x_ = VectorXd(5);
 
     // initial covariance matrix
-    P_ = MatrixXd(5, 5);
-    P_.fill(0.0);
+    P_ = MatrixXd::Zero(5, 5);
+	P_ << 1, 0, 0, 0, 0,
+	      0, 1, 0, 0, 0,
+          0, 0, 1, 0, 0,
+          0, 0, 0, 1, 0,
+          0, 0, 0, 0, 1;
 
     // Process noise standard deviation longitudinal acceleration in m/s^2
     std_a_ = 3.;
@@ -90,11 +94,13 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_pkg) {
     /**
      * Prediction
      */
-
-    //while (dt > 0.1) {
-    //    Prediction(0.05);
-    //    dt -= 0.05;
-    //}
+    // Decrease delta t to increase numerical instability and avoid
+    // covariance values getting to large.
+    // suggested by Wolfgang_Steiner
+    while (dt > 0.1) {
+        Prediction(0.05);
+        dt -= 0.05;
+    }
     Prediction(dt);
 
     /**
@@ -113,6 +119,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_pkg) {
     }
 }
 
+
 /**
  * Initialize
  * @param meas_package
@@ -128,8 +135,8 @@ void UKF::Initialize(MeasurementPackage meas_pkg) {
 
         auto x = tools.PolarToCartesian(z);
 
-        // px, py, rho_dot
-        x_ << x(0), x(1), z(2), 0, 0;
+        // px, py, rho_dot, phi
+        x_ << x(0), x(1), z(2), z(1), 0;
     }
     else
     if (use_laser_ &&
@@ -185,8 +192,8 @@ MatrixXd UKF::GenerateSigmaPoints() {
     // Sigma points
     MatrixXd Xsig_aug = MatrixXd::Zero(n_aug_, n_sig_);
     double scale = sqrt(lambda_ + n_aug_);
-    Xsig_aug.col(0) = x_aug;
 
+    Xsig_aug.col(0) = x_aug;
     for (int i = 0; i < n_aug_; ++i) {
         Xsig_aug.col(i+1)        = x_aug + scale * A_aug.col(i);
         Xsig_aug.col(i+1+n_aug_) = x_aug - scale * A_aug.col(i);
@@ -196,6 +203,8 @@ MatrixXd UKF::GenerateSigmaPoints() {
 }
 
 void UKF::PredictSigmaPoints(MatrixXd Xsig, double dt) {
+
+    // cout << "Xsig: " << Xsig << endl;
 
     for (int i = 0; i < n_sig_; ++i) {
 
@@ -222,8 +231,8 @@ void UKF::PredictSigmaPoints(MatrixXd Xsig, double dt) {
 
         px_p += 0.5*nu_a*dt*dt * cos(yaw);
         py_p += 0.5*nu_a*dt*dt * sin(yaw);
+        v_p   = v + nu_a*dt;
 
-        v_p    = v + nu_a*dt;
         yaw_p  = yaw + yawd*dt + 0.5*nu_yawdd*dt*dt;
         yawd_p = yawd + nu_yawdd*dt;
 
@@ -233,6 +242,7 @@ void UKF::PredictSigmaPoints(MatrixXd Xsig, double dt) {
         Xsig_pred_(3, i) = yaw_p;
         Xsig_pred_(4, i) = yawd_p;
     }
+    // cout << "Xsig_pred: " << Xsig_pred_ << endl;
 }
 
 void UKF::PredictMeanAndCovariance() {
@@ -254,10 +264,7 @@ void UKF::PredictMeanAndCovariance() {
     P_.fill(0.0);
     for (int i = 0; i < n_sig_; ++i) {
         VectorXd x_diff = Xsig_pred_.col(i) - x_;
-
-        // angle normalization
-        x_diff(3) += M_PI;
-        x_diff(3) = x_diff(3) - twoPI * floor(x_diff(3)/twoPI) - M_PI;
+        x_diff(3) = tools.NormalizeAngle(x_diff(3));
 
         P_ += weights_(i) * x_diff * x_diff.transpose();
     }
@@ -301,10 +308,7 @@ void UKF::UpdateLidar(MeasurementPackage meas_pkg) {
     for (int i = 0; i < n_sig_; ++i) {
         // residual
         VectorXd z_diff = Zsig.col(i) - z_pred;
-
-        // angle normalization
-        z_diff(1) += M_PI;
-        z_diff(1) = z_diff(1) - twoPI * floor(z_diff(1)/twoPI) - M_PI;
+        z_diff(1) = tools.NormalizeAngle(z_diff(1));
 
         S += weights_(i) * z_diff * z_diff.transpose();
     }
@@ -322,15 +326,11 @@ void UKF::UpdateLidar(MeasurementPackage meas_pkg) {
 
         // residual
         VectorXd z_diff = Zsig.col(i) - z_pred;
-        // angle normalization
-        z_diff(1) += M_PI;
-        z_diff(1) = z_diff(1) - twoPI * floor(z_diff(1)/twoPI) - M_PI;
+        z_diff(1) = tools.NormalizeAngle(z_diff(1));
 
         // state diff
         VectorXd x_diff = Xsig_pred_.col(i) - x_;
-        // angle normalization
-        x_diff(3) += M_PI;
-        x_diff(3) = x_diff(3) - twoPI * floor(x_diff(3)/twoPI) - M_PI;
+        x_diff(3) = tools.NormalizeAngle(x_diff(3));
 
         Tc += weights_(i) * x_diff * z_diff.transpose();
     }
@@ -341,10 +341,7 @@ void UKF::UpdateLidar(MeasurementPackage meas_pkg) {
     // residual
     auto z = meas_pkg.raw_measurements_;
     VectorXd z_diff = z - z_pred;
-
-    // angle normalization
-    z_diff(1) += M_PI;
-    z_diff(1) = z_diff(1) - twoPI * floor(z_diff(1)/twoPI) - M_PI;
+    z_diff(1) = tools.NormalizeAngle(z_diff(1));
 
     // update state mean and covariance matrix
     x_ += K * z_diff;
@@ -369,8 +366,10 @@ void UKF::UpdateRadar(MeasurementPackage meas_pkg) {
     */
     int n_z = 3;
 
+    // cout << "Xsig_pred: " << Xsig_pred_ << endl;
+
     // Transform sigma points to measurement space
-    MatrixXd Zsig = MatrixXd(n_z, n_sig_);
+    MatrixXd Zsig = MatrixXd::Zero(n_z, n_sig_);
     for (int i = 0; i < n_sig_; ++i) {
 
         double px  = Xsig_pred_(0, i);
@@ -392,21 +391,22 @@ void UKF::UpdateRadar(MeasurementPackage meas_pkg) {
         Zsig(2, i) = rho_dot;
     }
 
+    // cout << "Zsig: " << Zsig << endl;
+
     // mean predicted measurement
     VectorXd z_pred = VectorXd::Zero(n_z);
     for (int i = 0; i < n_sig_; ++i) {
         z_pred += weights_(i) * Zsig.col(i);
     }
+    // cout << "weights: " << weights_ << endl;
+    // cout << "z_pred: " << z_pred << endl;
 
     // measurement covariance matrix S
     MatrixXd S = MatrixXd::Zero(n_z, n_z);
     for (int i = 0; i < n_sig_; ++i) {
         // residual
         VectorXd z_diff = Zsig.col(i) - z_pred;
-
-        // angle normalization
-        z_diff(1) += M_PI;
-        z_diff(1) = z_diff(1) - twoPI * floor(z_diff(1)/twoPI) - M_PI;
+        z_diff(1) = tools.NormalizeAngle(z_diff(1));
 
         S += weights_(i) * z_diff * z_diff.transpose();
     }
@@ -418,6 +418,8 @@ void UKF::UpdateRadar(MeasurementPackage meas_pkg) {
          0, 0, std_radrd_*std_radrd_;
     S += R;
 
+    // cout << "S: " << S << endl;
+
     // Update
     // correlation matrix
     MatrixXd Tc = MatrixXd::Zero(n_x_, n_z);
@@ -425,34 +427,35 @@ void UKF::UpdateRadar(MeasurementPackage meas_pkg) {
 
         // residual
         VectorXd z_diff = Zsig.col(i) - z_pred;
-        // angle normalization
-        z_diff(1) += M_PI;
-        z_diff(1) = z_diff(1) - twoPI * floor(z_diff(1)/twoPI) - M_PI;
+        z_diff(1) = tools.NormalizeAngle(z_diff(1));
 
         // state diff
         VectorXd x_diff = Xsig_pred_.col(i) - x_;
-        // angle normalization
-        x_diff(3) += M_PI;
-        x_diff(3) = x_diff(3) - twoPI * floor(x_diff(3)/twoPI) - M_PI;
+        x_diff(3) = tools.NormalizeAngle(x_diff(3));
 
         Tc += weights_(i) * x_diff * z_diff.transpose();
     }
 
+    // cout << "Tc: " << Tc << endl;
+
     // Kalman gain K
     MatrixXd K = Tc * S.inverse();
+
+    // cout << "K: " << K << endl;
 
     // residual
     auto z = meas_pkg.raw_measurements_;
     VectorXd z_diff = z - z_pred;
+    z_diff(1) = tools.NormalizeAngle(z_diff(1));
 
-    // angle normalization
-    z_diff(1) += M_PI;
-    z_diff(1) = z_diff(1) - twoPI * floor(z_diff(1)/twoPI) - M_PI;
+    // cout << "N z_diff: " << z_diff << endl;
 
     // update state mean and covariance matrix
     x_ += K * z_diff;
     P_ -= K * S * K.transpose();
 
+    // cout << "x: " << x_ << endl;
+    // cout << "P: " << P_ << endl;
     // NIS
     NIS_radar_ = z_diff.transpose() * S.inverse() * z_diff;
 }
